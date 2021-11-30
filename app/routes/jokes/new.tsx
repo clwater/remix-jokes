@@ -1,8 +1,23 @@
-import type { ActionFunction } from "remix";
-import { useActionData, redirect } from "remix";
+import type { ActionFunction, LoaderFunction } from "remix";
+import {
+  useActionData,
+  redirect,
+  useCatch,
+  Link
+} from "remix";
 import { db } from "~/utils/db.server";
-import { requireUserId } from "~/utils/session.server";
+import {
+  requireUserId,
+  getUserId
+} from "~/utils/session.server";
 
+export let loader: LoaderFunction = async ({ request }) => {
+  let userId = await getUserId(request);
+  if (!userId) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+  return {};
+};
 
 function validateJokeContent(content: string) {
   if (content.length < 10) {
@@ -35,8 +50,6 @@ export let action: ActionFunction = async ({
   let form = await request.formData();
   let name = form.get("name");
   let content = form.get("content");
-  // we do this type check to be extra sure and to make TypeScript happy
-  // we'll explore validation next!
   if (
     typeof name !== "string" ||
     typeof content !== "string"
@@ -48,29 +61,31 @@ export let action: ActionFunction = async ({
     name: validateJokeName(name),
     content: validateJokeContent(content)
   };
-
   let fields = { name, content };
-
   if (Object.values(fieldErrors).some(Boolean)) {
     return { fieldErrors, fields };
   }
 
   let joke = await db.joke.create({
     data: { ...fields, jokesterId: userId }
-    });
+  });
   return redirect(`/jokes/${joke.id}`);
 };
 
-
 export default function NewJokeRoute() {
   let actionData = useActionData<ActionData | undefined>();
+
   return (
     <div>
       <p>Add your own hilarious joke</p>
       <form method="post">
         <div>
           <label>
-            Name: <input type="text" defaultValue={actionData?.fields?.name} name="name"
+            Name:{" "}
+            <input
+              type="text"
+              defaultValue={actionData?.fields?.name}
+              name="name"
               aria-invalid={
                 Boolean(actionData?.fieldErrors?.name) ||
                 undefined
@@ -79,7 +94,8 @@ export default function NewJokeRoute() {
                 actionData?.fieldErrors?.name
                   ? "name-error"
                   : undefined
-              } />
+              }
+            />
           </label>
           {actionData?.fieldErrors?.name ? (
             <p
@@ -93,7 +109,10 @@ export default function NewJokeRoute() {
         </div>
         <div>
           <label>
-            Content: <textarea name="content" defaultValue={actionData?.fields?.content}
+            Content:{" "}
+            <textarea
+              defaultValue={actionData?.fields?.content}
+              name="content"
               aria-invalid={
                 Boolean(actionData?.fieldErrors?.content) ||
                 undefined
@@ -102,7 +121,8 @@ export default function NewJokeRoute() {
                 actionData?.fieldErrors?.content
                   ? "content-error"
                   : undefined
-              } />
+              }
+            />
           </label>
           {actionData?.fieldErrors?.content ? (
             <p
@@ -120,6 +140,27 @@ export default function NewJokeRoute() {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+export function CatchBoundary() {
+  let caught = useCatch();
+
+  if (caught.status === 401) {
+    return (
+      <div className="error-container">
+        <p>You must be logged in to create a joke.</p>
+        <Link to="/login">Login</Link>
+      </div>
+    );
+  }
+}
+
+export function ErrorBoundary() {
+  return (
+    <div className="error-container">
+      Something unexpected went wrong. Sorry about that.
     </div>
   );
 }
